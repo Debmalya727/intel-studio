@@ -2,10 +2,21 @@
 # 🐳 IntelStudio Deployment Dockerfile
 # ==========================================
 # This Dockerfile is optimized for lightweight cloud deployments (API Mode).
-# It uses requirements-prod.txt to install only necessary web dependencies,
-# bypassing heavy local PyTorch installations. This results in a fast build
-# and low RAM footprint (< 150MB), perfect for Render, Heroku, or Hugging Face.
+# It uses a multi-stage build to compile the React frontend first, bypassing Node.js
+# in the final image to keep it lightweight.
 
+# --- Stage 1: Build React Frontend ---
+FROM node:20-slim AS frontend-builder
+WORKDIR /build
+# Copy package definition files
+COPY frontend/package*.json ./
+# Clean install npm packages
+RUN npm ci
+# Copy rest of the frontend code and compile
+COPY frontend/ ./
+RUN npm run build
+
+# --- Stage 2: Production Run Image ---
 FROM python:3.11-slim
 
 # Set environment variables
@@ -29,6 +40,9 @@ RUN pip install --no-cache-dir -r requirements-prod.txt
 
 # Copy project files
 COPY . /app/
+
+# Copy built frontend assets from builder stage
+COPY --from=frontend-builder /build/dist /app/frontend/dist
 
 # Create necessary static and uploads folders
 RUN mkdir -p static/generated uploads
