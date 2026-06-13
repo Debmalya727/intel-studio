@@ -1,0 +1,10 @@
+flask
+python-dotenv
+requests
+torch
+diffusers
+transformers
+accelerate
+Pillow
+safetensors
+invisible-watermark

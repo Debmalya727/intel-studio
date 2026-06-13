@@ -1,0 +1,23 @@
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment Variables (Secrets - VERY IMPORTANT TO IGNORE)
+.env
+
+# Uploads & Generated Images
+uploads/*
+!uploads/.gitkeep
+static/generated/*
+!static/generated/.gitkeep
+
+# IDE Configs
+.idea/
+.vscode/
