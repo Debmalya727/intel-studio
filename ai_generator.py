@@ -370,27 +370,11 @@ def generate_text_to_image(prompt: str, steps: int = 30, guidance_scale: float =
         return {"error": str(e)}
 
 
-def generate_image_to_image_api(input_image_path: str, prompt: str, strength: float = None, steps: int = 35, guidance_scale: float = 8.0, progress_callback=None) -> str:
-    """API-based image-to-image is not supported on the free Serverless Inference tier."""
-    return {"error": "Image-to-Image translation requires GPU resources and is not supported on the free Hugging Face Serverless Inference tier. Please run the project locally in LOCAL mode to use this feature."}
-
-
 def generate_image_to_image(input_image_path: str, prompt: str, strength: float = None, steps: int = 35, guidance_scale: float = 8.0, preserve_explicit: bool = False, progress_callback=None) -> str:
     """Hybrid img2img:
-    Runs locally or via serverless API depending on generation mode.
+    Runs locally on GPU (if CUDA available) or CPU. Since HF serverless router does not support free image-to-image/inpainting,
+    this always uses local PyTorch.
     """
-    mode = os.getenv("GENERATION_MODE", "API").upper()
-    if mode == "API":
-        return generate_image_to_image_api(
-            input_image_path,
-            prompt,
-            strength=strength,
-            steps=steps,
-            guidance_scale=guidance_scale,
-            progress_callback=progress_callback
-        )
-
-    # Local fallback
     if not TORCH_AVAILABLE:
         return {"error": "Local PyTorch/torch is not installed or available on this system. Make sure you install the full requirements.txt."}
 
