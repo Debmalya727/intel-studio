@@ -370,11 +370,79 @@ def generate_text_to_image(prompt: str, steps: int = 30, guidance_scale: float =
         return {"error": str(e)}
 
 
+def generate_image_to_image_api(input_image_path: str, prompt: str, strength: float = None, steps: int = 35, guidance_scale: float = 8.0, progress_callback=None) -> str:
+    """API-based image-to-image using timbrooks/instruct-pix2pix with progress simulation."""
+    if not prompt or not prompt.strip():
+        return {"error": "Empty prompt"}
+    if not os.path.exists(input_image_path):
+        return {"error": "Input image not found"}
+        
+    import time
+    stop_progress = False
+    
+    def progress_simulator():
+        percent = 10
+        while not stop_progress and percent < 90:
+            if progress_callback:
+                progress_callback(percent, message="Transforming image via Serverless API...")
+            time.sleep(0.5)
+            percent += 15
+            if percent > 90:
+                percent = 90
+                
+    if progress_callback:
+        threading.Thread(target=progress_simulator).start()
+        
+    try:
+        init_image = Image.open(input_image_path).convert("RGB")
+        client = get_inference_client()
+        
+        # Use configurable API model
+        api_model = os.getenv("API_IMG2IMG_MODEL", "timbrooks/instruct-pix2pix")
+        print(f"[INFO] Generating Image-to-Image via API ({api_model}): {prompt}")
+        
+        output_image = client.image_to_image(
+            image=init_image,
+            prompt=prompt,
+            model=api_model,
+            guidance_scale=guidance_scale,
+            num_inference_steps=steps
+        )
+        
+        stop_progress = True
+        if progress_callback:
+            progress_callback(95, message="Saving transformed pixels to disk...")
+            
+        timestamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
+        filename = f"img2img_{timestamp}.png"
+        filepath = os.path.join(GENERATED_FOLDER, filename)
+        output_image.save(filepath)
+        
+        if progress_callback:
+            progress_callback(100, message="Success!")
+        return filepath
+    except Exception as e:
+        stop_progress = True
+        print(f"[ERROR] API Image-to-Image failed: {e}")
+        return {"error": f"API Image-to-Image failed: {str(e)}"}
+
+
 def generate_image_to_image(input_image_path: str, prompt: str, strength: float = None, steps: int = 35, guidance_scale: float = 8.0, preserve_explicit: bool = False, progress_callback=None) -> str:
     """Hybrid img2img:
-    Runs locally on GPU (if CUDA available) or CPU. Since HF serverless router does not support free image-to-image/inpainting,
-    this always uses local PyTorch.
+    Runs locally or via serverless API depending on generation mode.
     """
+    mode = os.getenv("GENERATION_MODE", "API").upper()
+    if mode == "API":
+        return generate_image_to_image_api(
+            input_image_path,
+            prompt,
+            strength=strength,
+            steps=steps,
+            guidance_scale=guidance_scale,
+            progress_callback=progress_callback
+        )
+
+    # Local fallback
     if not TORCH_AVAILABLE:
         return {"error": "Local PyTorch/torch is not installed or available on this system. Make sure you install the full requirements.txt."}
 
