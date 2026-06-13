@@ -53,9 +53,13 @@ def get_or_set_config():
             return jsonify({"status": "success", "generation_mode": generation_mode})
         return jsonify({"error": "Invalid mode. Use API or LOCAL"}), 400
     else:
-        import torch
-        cuda_available = torch.cuda.is_available()
-        device_name = torch.cuda.get_device_name(0) if cuda_available else "CPU"
+        try:
+            import torch
+            cuda_available = torch.cuda.is_available()
+            device_name = torch.cuda.get_device_name(0) if cuda_available else "CPU"
+        except ImportError:
+            cuda_available = False
+            device_name = "Not Available (PyTorch/torch not installed)"
         return jsonify({
             "generation_mode": generation_mode,
             "cuda_available": cuda_available,

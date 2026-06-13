@@ -2,16 +2,21 @@ import os
 import io
 import threading
 from datetime import datetime
-import torch
-import numpy as np
 from PIL import Image, ImageFilter
 from huggingface_hub import login
-from diffusers import (
-    StableDiffusionPipeline,
-    StableDiffusionImg2ImgPipeline,
-    StableDiffusionInpaintPipeline,
-    EulerDiscreteScheduler,
-)
+
+try:
+    import torch
+    import numpy as np
+    from diffusers import (
+        StableDiffusionPipeline,
+        StableDiffusionImg2ImgPipeline,
+        StableDiffusionInpaintPipeline,
+        EulerDiscreteScheduler,
+    )
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
 
 # Optional: Hugging Face login for private models
 HF_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
@@ -21,9 +26,12 @@ except Exception as e:
     print(f"[WARNING] Hugging Face login skipped or failed: {e}")
 
 # Device setup
-device = "cuda" if torch.cuda.is_available() else "cpu"
-# Speed opt
-torch.backends.cudnn.benchmark = True
+if TORCH_AVAILABLE:
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    # Speed opt
+    torch.backends.cudnn.benchmark = True
+else:
+    device = "cpu"
 
 # Paths
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -42,6 +50,8 @@ _local_pipelines = {
 }
 
 def get_local_pipeline(task, progress_callback=None):
+    if not TORCH_AVAILABLE:
+        raise RuntimeError("Local PyTorch pipelines are not available because torch/diffusers is not installed.")
     global _local_pipelines
     if _local_pipelines[task] is not None:
         return _local_pipelines[task]
@@ -142,6 +152,9 @@ def create_mask_from_foreground(pil_image: Image.Image, alpha_thresh: int = 128,
         2. Morphological cleanup (remove specks, fill holes).
         3. Apply Gaussian blur for natural blending at edges.
     """
+    if not TORCH_AVAILABLE:
+        print("[WARNING] torch/numpy not available — returning full black mask.")
+        return Image.new("L", pil_image.size, color=0)
     if not REMBG_AVAILABLE:
         # Fallback: preserve everything to avoid deleting subject
         print("[WARNING] rembg not available — returning full black mask (preserve all).")
@@ -202,6 +215,8 @@ def letterbox_resize_with_mask(image: Image.Image, mask: Image.Image, desired: i
     preserving alignment between image and mask.
     Returns PIL images (RGB, L).
     """
+    if not TORCH_AVAILABLE:
+        raise RuntimeError("letterbox_resize_with_mask requires numpy which is not installed.")
     img = np.array(image.convert("RGB"))
     m = np.array(mask.convert("L"))
 
@@ -312,6 +327,9 @@ def generate_text_to_image(prompt: str, steps: int = 30, guidance_scale: float =
         return generate_text_to_image_api(prompt, height=height, width=width, progress_callback=progress_callback)
 
     # Local fallback
+    if not TORCH_AVAILABLE:
+        return {"error": "Local PyTorch/torch is not installed or available on this system. Make sure you install the full requirements.txt."}
+
     if not prompt or not prompt.strip():
         return {"error": "Empty prompt"}
 
@@ -357,6 +375,9 @@ def generate_image_to_image(input_image_path: str, prompt: str, strength: float 
     Runs locally on GPU (if CUDA available) or CPU. Since HF serverless router does not support free image-to-image/inpainting,
     this always uses local PyTorch.
     """
+    if not TORCH_AVAILABLE:
+        return {"error": "Local PyTorch/torch is not installed or available on this system. Make sure you install the full requirements.txt."}
+
     if device == "cpu":
         print("[WARNING] No local GPU detected. Running image-to-image on CPU, which will be slow...")
     else:
