@@ -371,83 +371,8 @@ def generate_text_to_image(prompt: str, steps: int = 30, guidance_scale: float =
 
 
 def generate_image_to_image_api(input_image_path: str, prompt: str, strength: float = None, steps: int = 35, guidance_scale: float = 8.0, progress_callback=None) -> str:
-    """API-based image-to-image using stable-diffusion-v1-5 with progress simulation."""
-    if not prompt or not prompt.strip():
-        return {"error": "Empty prompt"}
-    if not os.path.exists(input_image_path):
-        return {"error": "Input image not found"}
-        
-    import time
-    import requests
-    stop_progress = False
-    
-    def progress_simulator():
-        percent = 10
-        while not stop_progress and percent < 90:
-            if progress_callback:
-                progress_callback(percent, message="Transforming image via Serverless API...")
-            time.sleep(0.5)
-            percent += 15
-            if percent > 90:
-                percent = 90
-                
-    if progress_callback:
-        threading.Thread(target=progress_simulator).start()
-        
-    try:
-        init_image = Image.open(input_image_path).convert("RGB")
-        
-        # Resize to 512x512 for optimal stable diffusion performance
-        init_image = init_image.resize((512, 512))
-        
-        # Convert image to raw bytes
-        buf = io.BytesIO()
-        init_image.save(buf, format="PNG")
-        image_bytes = buf.getvalue()
-        
-        # Use configurable API model
-        api_model = os.getenv("API_IMG2IMG_MODEL", "runwayml/stable-diffusion-v1-5")
-        api_url = f"https://api-inference.huggingface.co/models/{api_model}"
-        
-        headers = {}
-        if HF_TOKEN:
-            headers["Authorization"] = f"Bearer {HF_TOKEN}"
-            
-        print(f"[INFO] Generating Image-to-Image via API HTTP request ({api_model}): {prompt}")
-        
-        params = {
-            "prompt": prompt,
-            "strength": strength if strength is not None else 0.5,
-            "num_inference_steps": steps,
-            "guidance_scale": guidance_scale
-        }
-        
-        response = requests.post(api_url, headers=headers, data=image_bytes, params=params, timeout=60)
-        
-        if response.status_code != 200:
-            raise RuntimeError(f"Hugging Face API returned status {response.status_code}: {response.text}")
-            
-        output_image = Image.open(io.BytesIO(response.content))
-        
-        stop_progress = True
-        if progress_callback:
-            progress_callback(95, message="Saving transformed pixels to disk...")
-            
-        timestamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
-        filename = f"img2img_{timestamp}.png"
-        filepath = os.path.join(GENERATED_FOLDER, filename)
-        output_image.save(filepath)
-        
-        if progress_callback:
-            progress_callback(100, message="Success!")
-        return filepath
-    except Exception as e:
-        stop_progress = True
-        import traceback
-        traceback.print_exc()
-        error_msg = f"{type(e).__name__}: {str(e)}" if str(e) else repr(e)
-        print(f"[ERROR] API Image-to-Image failed: {error_msg}")
-        return {"error": f"API Image-to-Image failed: {error_msg}"}
+    """API-based image-to-image is not supported on the free Serverless Inference tier."""
+    return {"error": "Image-to-Image translation requires GPU resources and is not supported on the free Hugging Face Serverless Inference tier. Please run the project locally in LOCAL mode to use this feature."}
 
 
 def generate_image_to_image(input_image_path: str, prompt: str, strength: float = None, steps: int = 35, guidance_scale: float = 8.0, preserve_explicit: bool = False, progress_callback=None) -> str:
