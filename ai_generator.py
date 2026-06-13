@@ -423,8 +423,11 @@ def generate_image_to_image_api(input_image_path: str, prompt: str, strength: fl
         return filepath
     except Exception as e:
         stop_progress = True
-        print(f"[ERROR] API Image-to-Image failed: {e}")
-        return {"error": f"API Image-to-Image failed: {str(e)}"}
+        import traceback
+        traceback.print_exc()
+        error_msg = f"{type(e).__name__}: {str(e)}" if str(e) else repr(e)
+        print(f"[ERROR] API Image-to-Image failed: {error_msg}")
+        return {"error": f"API Image-to-Image failed: {error_msg}"}
 
 
 def generate_image_to_image(input_image_path: str, prompt: str, strength: float = None, steps: int = 35, guidance_scale: float = 8.0, preserve_explicit: bool = False, progress_callback=None) -> str:
