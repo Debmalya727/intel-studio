@@ -51,4 +51,4 @@ RUN mkdir -p static/generated uploads
 EXPOSE 5000
 
 # Start server using gunicorn with port binding support
-CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-5000} --workers 2 --threads 4 app:app"]
+CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-5000} --workers 1 --threads 4 app:app"]
