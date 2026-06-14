@@ -6,7 +6,7 @@ colorTo: indigo
 sdk: docker
 app_port: 5000
 ---
-# Live link : [https://huggingface.co/spaces/debmalyap/intel-studio]link
+# Live link : https://huggingface.co/spaces/debmalyap/intel-studio
 # 🎨 IntelStudio - Premium AI Creativity Platform
 
 IntelStudio is a state-of-the-art AI-powered image generation and editing suite. It features a premium, responsive glassmorphic user interface designed for high-fidelity artwork creation and rapid prototyping. It supports both cloud-based API models and fully local GPU-accelerated pipelines.
