@@ -4,7 +4,9 @@ import base64
 import uuid
 import threading
 from datetime import datetime
-from flask import Flask, request, render_template, jsonify, url_for, send_from_directory
+import zipfile
+import io
+from flask import Flask, request, render_template, jsonify, url_for, send_from_directory, send_file
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 from ai_generator import generate_text_to_image, generate_image_to_image
@@ -65,6 +67,46 @@ def get_or_set_config():
             "cuda_available": cuda_available,
             "device_name": device_name
         })
+
+
+@app.route('/api/download-project')
+def download_project():
+    """Zips the project workspace (excluding env, node_modules, git, and heavy folders) and returns it."""
+    try:
+        memory_file = io.BytesIO()
+        root_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        ignore_dirs = {'.git', '.venv', 'venv', 'node_modules', '__pycache__', 'uploads'}
+        ignore_files = {'.env', 'intel-studio.zip'}
+        
+        with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for root, dirs, files in os.walk(root_dir):
+                # Filter out ignored directories in-place to skip traversing them
+                dirs[:] = [d for d in dirs if d not in ignore_dirs]
+                
+                # Exclude static/generated content
+                rel_root = os.path.relpath(root, root_dir)
+                is_generated = rel_root == os.path.join("static", "generated") or rel_root.startswith(os.path.join("static", "generated") + os.sep)
+                
+                for file in files:
+                    if file in ignore_files or file.endswith('.pyc') or file.endswith('.zip'):
+                        continue
+                    if is_generated:
+                        continue
+                    file_path = os.path.join(root, file)
+                    arcname = os.path.relpath(file_path, root_dir)
+                    zipf.write(file_path, arcname)
+                    
+        memory_file.seek(0)
+        return send_file(
+            memory_file,
+            mimetype='application/zip',
+            as_attachment=True,
+            download_name='intel-studio.zip'
+        )
+    except Exception as e:
+        print(f"[ERROR] Failed to package project: {e}")
+        return jsonify({"error": f"Failed to package project: {str(e)}"}), 500
 
 
 # --- Main Routes ---
