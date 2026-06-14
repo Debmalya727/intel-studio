@@ -190,9 +190,24 @@ function App() {
       timestamp: new Date().toLocaleString()
     };
     const currentHist = JSON.parse(localStorage.getItem('intel_history') || '[]');
-    const updated = [newItem, ...currentHist].slice(0, 30);
+    let updated = [newItem, ...currentHist].slice(0, 30);
     setHistoryItems(updated);
-    localStorage.setItem('intel_history', JSON.stringify(updated));
+    try {
+      localStorage.setItem('intel_history', JSON.stringify(updated));
+    } catch (e) {
+      console.warn('⚠️ LocalStorage quota exceeded. Evicting older items to free space.');
+      // Attempt to evict the oldest items until it fits
+      while (updated.length > 1) {
+        updated.pop();
+        try {
+          localStorage.setItem('intel_history', JSON.stringify(updated));
+          setHistoryItems(updated);
+          break; // successfully saved after eviction
+        } catch (innerErr) {
+          // continue evicting
+        }
+      }
+    }
   };
 
   const handleSearch = () => {
