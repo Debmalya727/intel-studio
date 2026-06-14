@@ -26,8 +26,7 @@ app = Flask(__name__, static_folder="frontend/dist", static_url_path="")
 # Get the Unsplash API key from environment variables
 UNSPLASH_ACCESS_KEY = os.getenv("UNSPLASH_ACCESS_KEY")
 if not UNSPLASH_ACCESS_KEY:
-    # If the key is not found, the app cannot run.
-    raise ValueError("UNSPLASH_ACCESS_KEY not found in .env file. Please add it.")
+    print("[WARNING] UNSPLASH_ACCESS_KEY not found in .env file. Key must be configured in UI Settings or .env file.")
 
 # Configure a folder for temporary uploads (for image-to-image generation)
 UPLOAD_FOLDER = "uploads"
@@ -134,8 +133,14 @@ def search():
         if not query:
             return jsonify({"error": "Query is empty"}), 400
 
+        # Prioritize custom client key from headers, otherwise fall back to server key
+        client_key = request.headers.get("X-Unsplash-Key")
+        unsplash_key = client_key if client_key and client_key.strip() else UNSPLASH_ACCESS_KEY
+        if not unsplash_key:
+            return jsonify({"error": "Unsplash API Access Key is not configured. Please set it in Settings."}), 400
+
         # --- Unsplash API Call ---
-        headers = {"Authorization": f"Client-ID {UNSPLASH_ACCESS_KEY}"}
+        headers = {"Authorization": f"Client-ID {unsplash_key}"}
         params = {"query": query, "per_page": 9, "orientation": "squarish"}
         api_url = "https://api.unsplash.com/search/photos"
 
@@ -179,11 +184,21 @@ def generate_text_image_route():
         guidance_val = request.json.get("guidance_scale")
         height_val = request.json.get("height")
         width_val = request.json.get("width")
+        
+        # New advanced parameters
+        negative_prompt = request.json.get("negative_prompt")
+        seed_val = request.json.get("seed")
+        model = request.json.get("model")
+        
+        # API Keys from client headers
+        hf_token_header = request.headers.get("X-HF-Token")
+        hf_token = hf_token_header if hf_token_header and hf_token_header.strip() else None
 
         steps = int(steps_val) if steps_val is not None else 30
         guidance_scale = float(guidance_val) if guidance_val is not None else 8.0
         height = int(height_val) if height_val is not None else 512
         width = int(width_val) if width_val is not None else 512
+        seed = int(seed_val) if seed_val is not None and str(seed_val).strip() != "" else None
 
         task_id = str(uuid.uuid4())
         progress_tracker[task_id] = {
@@ -210,6 +225,10 @@ def generate_text_image_route():
                         guidance_scale=guidance_scale,
                         height=height,
                         width=width,
+                        hf_token=hf_token,
+                        negative_prompt=negative_prompt,
+                        seed=seed,
+                        model=model,
                         progress_callback=progress_callback
                     )
                     if isinstance(output_path, dict) and "error" in output_path:
@@ -241,7 +260,12 @@ def generate_image_image_route():
         prompt = request.form.get("prompt")
         strength_val = request.form.get("strength")
         
+        # New advanced parameters
+        negative_prompt = request.form.get("negative_prompt")
+        seed_val = request.form.get("seed")
+        
         strength = float(strength_val) if strength_val is not None else None
+        seed = int(seed_val) if seed_val is not None and str(seed_val).strip() != "" else None
 
         if not image_file or not prompt:
             return jsonify({"error": "An image file and a prompt are required"}), 400
@@ -277,6 +301,8 @@ def generate_image_image_route():
                         input_image_path,
                         prompt,
                         strength=strength,
+                        negative_prompt=negative_prompt,
+                        seed=seed,
                         progress_callback=progress_callback
                     )
                     if isinstance(output_path, dict) and "error" in output_path:

@@ -267,12 +267,12 @@ def _make_full_and_negative_prompts(prompt: str):
 
 from huggingface_hub import InferenceClient
 
-def get_inference_client():
-    hf_token = os.getenv("HUGGINGFACE_TOKEN")
-    return InferenceClient(api_key=hf_token)
+def get_inference_client(hf_token=None):
+    token = hf_token or os.getenv("HUGGINGFACE_TOKEN")
+    return InferenceClient(api_key=token)
 
-def generate_text_to_image_api(prompt: str, height: int = 512, width: int = 512, progress_callback=None) -> str:
-    """API-based text-to-image using FLUX.1-schnell with progress simulation."""
+def generate_text_to_image_api(prompt: str, height: int = 512, width: int = 512, hf_token: str = None, model: str = None, seed: int = None, progress_callback=None) -> str:
+    """API-based text-to-image using Serverless API with progress simulation."""
     if not prompt or not prompt.strip():
         return {"error": "Empty prompt"}
     
@@ -293,13 +293,20 @@ def generate_text_to_image_api(prompt: str, height: int = 512, width: int = 512,
         threading.Thread(target=progress_simulator).start()
         
     try:
-        client = get_inference_client()
-        print(f"[INFO] Generating Text-to-Image via API (FLUX.1-schnell): {prompt}")
+        client = get_inference_client(hf_token)
+        model_id = model or "black-forest-labs/FLUX.1-schnell"
+        print(f"[INFO] Generating Text-to-Image via API ({model_id}): {prompt}")
+        
+        kwargs = {}
+        if seed is not None and seed != -1:
+            kwargs["seed"] = seed
+            
         output_image = client.text_to_image(
             prompt=prompt,
-            model="black-forest-labs/FLUX.1-schnell",
+            model=model_id,
             width=width,
-            height=height
+            height=height,
+            **kwargs
         )
         
         stop_progress = True
@@ -320,11 +327,11 @@ def generate_text_to_image_api(prompt: str, height: int = 512, width: int = 512,
         return {"error": f"API Text-to-Image failed: {str(e)}"}
 
 
-def generate_text_to_image(prompt: str, steps: int = 30, guidance_scale: float = 8.0, height: int = 512, width: int = 512, progress_callback=None) -> str:
+def generate_text_to_image(prompt: str, steps: int = 30, guidance_scale: float = 8.0, height: int = 512, width: int = 512, hf_token: str = None, negative_prompt: str = None, seed: int = None, model: str = None, progress_callback=None) -> str:
     """Hybrid Text-to-Image. Calls API or Local based on environment variables."""
     mode = os.getenv("GENERATION_MODE", "API").upper()
     if mode == "API":
-        return generate_text_to_image_api(prompt, height=height, width=width, progress_callback=progress_callback)
+        return generate_text_to_image_api(prompt, height=height, width=width, hf_token=hf_token, model=model, seed=seed, progress_callback=progress_callback)
 
     # Local fallback
     if not TORCH_AVAILABLE:
@@ -333,7 +340,9 @@ def generate_text_to_image(prompt: str, steps: int = 30, guidance_scale: float =
     if not prompt or not prompt.strip():
         return {"error": "Empty prompt"}
 
-    full_prompt, negative_prompt = _make_full_and_negative_prompts(prompt)
+    # Use custom negative prompt if provided, else standard negative prompt
+    neg_prompt = negative_prompt if negative_prompt is not None else "cartoon, painting, illustration, anime, blurry, low quality, cgi, 3d render, doll-like, deformed, different person"
+    full_prompt = f"{prompt}, ultra-realistic, photorealistic, high detail, 8k, cinematic lighting, sharp focus"
 
     try:
         pipe = get_local_pipeline("txt2img", progress_callback=progress_callback)
@@ -346,16 +355,22 @@ def generate_text_to_image(prompt: str, steps: int = 30, guidance_scale: float =
                     percent = 100
                 progress_callback(percent, message=f"Rendering canvas step {step + 1} of {steps}...")
 
+        # PyTorch manual seed generator
+        generator = None
+        if seed is not None and seed != -1:
+            generator = torch.Generator(device=device).manual_seed(seed)
+
         with torch.inference_mode():
             image = pipe(
                 prompt=full_prompt,
-                negative_prompt=negative_prompt,
+                negative_prompt=neg_prompt,
                 height=height,
                 width=width,
                 num_inference_steps=steps,
                 guidance_scale=guidance_scale,
                 callback=pipe_callback,
-                callback_steps=1
+                callback_steps=1,
+                generator=generator
             ).images[0]
 
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
@@ -370,7 +385,7 @@ def generate_text_to_image(prompt: str, steps: int = 30, guidance_scale: float =
         return {"error": str(e)}
 
 
-def generate_image_to_image(input_image_path: str, prompt: str, strength: float = None, steps: int = 35, guidance_scale: float = 8.0, preserve_explicit: bool = False, progress_callback=None) -> str:
+def generate_image_to_image(input_image_path: str, prompt: str, strength: float = None, steps: int = 35, guidance_scale: float = 8.0, preserve_explicit: bool = False, negative_prompt: str = None, seed: int = None, progress_callback=None) -> str:
     """Hybrid img2img:
     Runs locally on GPU (if CUDA available) or CPU. Since HF serverless router does not support free image-to-image/inpainting,
     this always uses local PyTorch.
@@ -397,7 +412,8 @@ def generate_image_to_image(input_image_path: str, prompt: str, strength: float 
     if strength is None:
         strength = 0.35 if preserve or background_intent else 0.7
 
-    full_prompt, negative_prompt = _make_full_and_negative_prompts(prompt)
+    full_prompt, default_neg_prompt = _make_full_and_negative_prompts(prompt)
+    neg_prompt = negative_prompt if negative_prompt is not None else default_neg_prompt
 
     # Load original image at native resolution (do not resize yet)
     orig_image = Image.open(input_image_path).convert("RGB")
@@ -417,6 +433,11 @@ def generate_image_to_image(input_image_path: str, prompt: str, strength: float 
                 if percent > 100:
                     percent = 100
                 progress_callback(percent, message=f"Transforming image step {step + 1} of {total_eval_steps}...")
+
+        # Setup manual seed generator
+        generator = None
+        if seed is not None and seed != -1:
+            generator = torch.Generator(device=device).manual_seed(seed)
 
         if preserve or background_intent:
             if progress_callback:
@@ -438,13 +459,14 @@ def generate_image_to_image(input_image_path: str, prompt: str, strength: float 
             with torch.inference_mode():
                 out = pipe(
                     prompt=full_prompt,
-                    negative_prompt=negative_prompt,
+                    negative_prompt=neg_prompt,
                     image=init_image,
                     mask_image=mask,
                     guidance_scale=guidance_scale,
                     num_inference_steps=steps,
                     callback=pipe_callback,
-                    callback_steps=1
+                    callback_steps=1,
+                    generator=generator
                 )
                 image = out.images[0]
 
@@ -461,13 +483,14 @@ def generate_image_to_image(input_image_path: str, prompt: str, strength: float 
             with torch.inference_mode():
                 out = pipe(
                     prompt=full_prompt,
-                    negative_prompt=negative_prompt,
+                    negative_prompt=neg_prompt,
                     image=init_image,
                     strength=strength,
                     guidance_scale=guidance_scale,
                     num_inference_steps=steps,
                     callback=pipe_callback,
-                    callback_steps=1
+                    callback_steps=1,
+                    generator=generator
                 )
                 image = out.images[0]
 
